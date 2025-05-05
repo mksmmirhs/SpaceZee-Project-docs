@@ -21,371 +21,458 @@ src/
 ├── app/
 │   ├── DB/           # Database configuration and models
 │   ├── errors/       # Custom error handling
+│   │   └── AppError.js  # Custom error class
 │   ├── middleware/   # Express middleware
+│   │   ├── auth.js      # Authentication middleware
+│   │   └── validateRequest.js # Zod validation middleware
 │   ├── modules/      # Feature modules
+│   │   ├── user/
+│   │   │   ├── user.constant.js # User role enums
+│   │   │   ├── user.controller.js
+│   │   │   ├── user.model.js
+│   │   │   ├── user.route.js
+│   │   │   ├── user.service.js
+│   │   │   └── user.validation.js
+│   │   ├── auth/
+│   │   ├── programs/
+│   │   ├── learningMaterial/
+│   │   ├── practical/
+│   │   ├── assignment/
+│   │   └── moduleRegistration.js # Module registration
 │   ├── routes/       # Route definitions
+│   │   └── index.js  # Root router
 │   ├── utils/        # Utility functions
 │   └── config.js     # Application configuration
 ├── app.js           # Express application setup
 └── server.js        # Server entry point
 ```
 
-## API Routes
+## Core Module Architecture
+
+Each feature module in the application follows a consistent architecture:
+
+1. **Model**: Defines the Mongoose schema and model
+2. **Controller**: Handles HTTP requests and responses
+3. **Service**: Contains business logic and data access
+4. **Route**: Defines the API endpoints for the feature
+5. **Validation**: Contains Zod validation schemas
+6. **Constants**: Defines constants related to the feature
+
+## Authentication System
+
+The application uses JWT (JSON Web Token) for authentication with a two-token system:
+
+1. **Access Token**: Short-lived token for API authorization
+2. **Refresh Token**: Long-lived token for obtaining new access tokens
+
+Authentication flow:
+
+1. User logs in with credentials
+2. Server validates credentials
+3. Server issues access and refresh tokens
+4. Client stores tokens
+5. Client includes access token in requests
+6. When access token expires, client uses refresh token to get a new one
+
+## Role-Based Access Control
+
+The system implements role-based access control with the following roles:
+
+```javascript
+// From user.constant.js
+export const UserRole = {
+  superAdmin: "superAdmin",
+  admin: "admin",
+  user: "user",
+};
+```
+
+Each API endpoint is protected by middleware that validates user roles.
+
+## API Routes with Implementation Details
 
 ### Authentication Routes (/auth)
 
 #### POST /auth/login
 
-- **Description**: User login endpoint
-- **Request Body**:
-
-```json
-{
-  "email": "user@example.com", // Required, valid email format
-  "password": "userpassword" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "User logged in successfully",
-  "data": {
-    "accessToken": "jwt_token",
-    "refreshToken": "refresh_token",
-    "user": {
-      "id": "user_id",
-      "name": "User Name",
-      "email": "user@example.com",
-      "role": "user"
-    }
-  }
-}
-```
+- **Controller**: AuthController.loginUser
+- **Service**: AuthService.loginUser
+- **Middleware**: validateRequest(LoginValidation)
+- **Implementation**:
+  - Validates user credentials
+  - Generates JWT tokens
+  - Returns user information and tokens
 
 #### POST /auth/change-password
 
-- **Description**: Change user password
-- **Access**: Admin, User
-- **Request Body**:
-
-```json
-{
-  "oldPassword": "currentpassword", // Required, string
-  "newPassword": "newpassword" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Password changed successfully",
-  "data": null
-}
-```
+- **Controller**: AuthController.changePassword
+- **Service**: AuthService.changePassword
+- **Middleware**:
+  - auth(UserRole.admin, UserRole.user)
+  - validateRequest(ChangePasswordValidation)
+- **Implementation**:
+  - Validates old password
+  - Hashes new password
+  - Updates user record
 
 #### POST /auth/refresh-token
 
-- **Description**: Refresh JWT token
-- **Request Cookies**:
-
-```json
-{
-  "refreshToken": "refresh_token" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Token refreshed successfully",
-  "data": {
-    "accessToken": "new_jwt_token"
-  }
-}
-```
+- **Controller**: AuthController.refreshToken
+- **Service**: AuthService.refreshToken
+- **Implementation**:
+  - Validates refresh token
+  - Issues new access token
 
 #### POST /auth/forget-password
 
-- **Description**: Initiate password reset
-- **Request Body**:
-
-```json
-{
-  "email": "user@example.com" // Required, valid email format
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Password reset email sent",
-  "data": null
-}
-```
+- **Controller**: AuthController.forgetPassword
+- **Service**: AuthService.forgetPassword
+- **Middleware**: validateRequest(ForgetPasswordValidation)
+- **Implementation**:
+  - Validates email existence
+  - Generates reset token
+  - Sends email with reset link
 
 #### POST /auth/create-password
 
-- **Description**: Create new password
-- **Body**:
-  - token: string
-  - password: string
-- **Response**: Success message
+- **Controller**: AuthController.createPassword
+- **Service**: AuthService.createPassword
+- **Middleware**: validateRequest(CreatePasswordValidation)
+- **Implementation**:
+  - Validates token
+  - Sets initial password for user
 
 #### POST /auth/reset-password
 
-- **Description**: Reset password with token
-- **Body**:
-  - token: string
-  - newPassword: string
-- **Response**: Success message
+- **Controller**: AuthController.resetPassword
+- **Service**: AuthService.resetPassword
+- **Middleware**: validateRequest(ResetPasswordValidation)
+- **Implementation**:
+  - Validates reset token
+  - Updates password in database
 
 ### User Routes (/users)
 
 #### POST /users/create-user
 
-- **Description**: Create new user
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
-
-```json
-{
-  "name": "User Name", // Required, string
-  "email": "user@example.com", // Required, valid email format
-  "role": "user" // Required, enum: ["admin", "user"]
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "User created successfully",
-  "data": {
-    "id": "user_id",
-    "name": "User Name",
-    "email": "user@example.com",
-    "role": "user",
-    "status": "active"
-  }
-}
-```
+- **Controller**: UserController.createUser
+- **Service**: UserService.createUser
+- **Middleware**:
+  - auth(UserRole.admin, UserRole.superAdmin)
+  - validateRequest(CreateUserValidation)
+- **Implementation**:
+  - Creates user with default password
+  - Sends email with activation instructions
 
 #### GET /users
 
-- **Description**: Get current user profile
-- **Access**: Admin, SuperAdmin, User
-- **Response**: User profile data
+- **Controller**: UserController.getUserProfile
+- **Service**: UserService.getUserProfile
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin, UserRole.user)
+- **Implementation**:
+  - Extracts user ID from JWT
+  - Returns user profile data
 
 #### GET /users/:email
 
-- **Description**: Get user by email
-- **Access**: Admin, SuperAdmin
-- **Response**: User data
+- **Controller**: UserController.getUserByEmail
+- **Service**: UserService.getUserByEmail
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin)
+- **Implementation**:
+  - Finds user by email
+  - Returns user data if found
 
 #### PATCH /users/change-status
 
-- **Description**: Change user status
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
-
-```json
-{
-  "status": "in-progress" // Required, enum: ["in-progress", "blocked"]
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "User status updated successfully",
-  "data": {
-    "id": "user_id",
-    "status": "in-progress"
-  }
-}
-```
+- **Controller**: UserController.changeUserStatus
+- **Service**: UserService.changeUserStatus
+- **Middleware**:
+  - auth(UserRole.admin, UserRole.superAdmin)
+  - validateRequest(ChangeStatusValidation)
+- **Implementation**:
+  - Updates user status
+  - Returns updated user data
 
 #### DELETE /users/:email
 
-- **Description**: Delete user
-- **Access**: Admin, SuperAdmin
-- **Response**: Success message
+- **Controller**: UserController.deleteUser
+- **Service**: UserService.deleteUser
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin)
+- **Implementation**:
+  - Performs soft delete (isDeleted: true)
+  - Returns success message
 
 #### PATCH /users/task-update
 
-- **Description**: Update user's completed tasks
-- **Access**: User
-- **Request Body**:
-
-```json
-{
-  "completedTask": "task_id" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Task updated successfully",
-  "data": {
-    "id": "user_id",
-    "completedTasks": ["task_id"]
-  }
-}
-```
+- **Controller**: UserController.updateUserTask
+- **Service**: UserService.updateUserTask
+- **Middleware**:
+  - auth(UserRole.user)
+  - validateRequest(TaskUpdateValidation)
+- **Implementation**:
+  - Adds task to user's completedTasks array
+  - Returns updated task list
 
 ### Program Routes (/program)
 
 #### POST /program/create-program
 
-- **Description**: Create new program
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
+- **Controller**: ProgramController.createProgram
+- **Service**: ProgramService.createProgramIntoDB
+- **Middleware**:
+  - auth(UserRole.admin, UserRole.superAdmin)
+  - validateRequest(CreateProgramValidation)
+- **Implementation**:
+  - Creates new program with modules
+  - Returns created program data
 
-```json
-{
-  "title": "Program Title", // Required, string
-  "description": "Program Description", // Required, string
-  "duration": 30, // Required, number
-  "modules": [
-    // Required, array
-    {
-      "title": "Module Title",
-      "content": "Module Content"
+#### GET /program
+
+- **Controller**: ProgramController.getAllPrograms
+- **Service**: ProgramService.getAllPrograms
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin, UserRole.user)
+- **Implementation**:
+  - Role-based data access:
+    - Users: Filtered data with completed tasks
+    - Admins: Complete program data
+  - Uses aggregation pipelines for user data
+  - Returns programs with populated relations
+
+Key implementation detail from `getAllPrograms` service:
+
+```javascript
+// From program.service.js
+const getAllPrograms = async (role, info, email) => {
+  let result;
+  if (role === UserRole.user) {
+    if (info.info) {
+      const user = await User.isUserExistByEmail(email);
+
+      if (!user) {
+        throw new AppError(httpStatus.NOT_FOUND, "This user is not found !");
+      }
+
+      const completedTasks = user.completedTask;
+      result = await Program.aggregate(
+        getProgramDetailsAggregation(completedTasks)
+      );
+    } else {
+      result = await Program.aggregate(getFullProgramAggregation);
     }
-  ]
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Program created successfully",
-  "data": {
-    "id": "program_id",
-    "title": "Program Title",
-    "description": "Program Description",
-    "duration": 30,
-    "modules": [...]
+  } else {
+    result = await Program.find().populate({
+      path: "learningMaterials.learningMaterial",
+      match: { isDeleted: false },
+      select: "name description courseImage courseContents",
+      // Additional population logic...
+    });
   }
-}
+  return result;
+};
 ```
-
-#### POST /program
-
-- **Description**: Get all programs
-- **Access**: Admin, SuperAdmin, User
-- **Response**: Array of programs
 
 ### Learning Material Routes (/material)
 
 #### POST /material/create
 
-- **Description**: Create learning material
-- **Access**: Admin, SuperAdmin
-- **Body**:
-  - title: string
-  - content: string
-  - programId: string
-  - type: string
-- **Response**: Created material data
+- **Controller**: LearningMaterialController.createLearningMaterial
+- **Service**: LearningMaterialService.createLearningMaterialIntoDB
+- **Middleware**:
+  - auth(UserRole.admin, UserRole.superAdmin)
+  - validateRequest(CreateLearningMaterialValidation)
+- **Implementation**:
+  - Creates new learning material
+  - Returns created material data
 
 #### GET /material/:programId
 
-- **Description**: Get materials by program
-- **Access**: Admin, SuperAdmin, User
-- **Response**: Array of materials
+- **Controller**: LearningMaterialController.getLearningMaterialsByProgram
+- **Service**: LearningMaterialService.getAllLearningMaterials
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin, UserRole.user)
+- **Implementation**:
+  - Role-based data access:
+    - Users: Filtered data using aggregation
+    - Admins: Complete material data
+  - Returns materials with nested content structure
 
-### Task Material Routes (/task)
+Key implementation detail from `getAllLearningMaterials` service:
 
-#### POST /task/create
+```javascript
+// From learningMaterial.service.js
+const getAllLearningMaterials = async (role) => {
+  let result;
+  if (role === UserRole.user) {
+    result = await LearningMaterial.aggregate([
+      {
+        $match: { isDeleted: false },
+      },
+      // Complex aggregation pipeline that:
+      // 1. Filters deleted content
+      // 2. Restructures content for frontend consumption
+      // 3. Orders content by sortOrder
+      // ...
+    ]);
+  } else {
+    result = await LearningMaterial.find();
+  }
+  return result;
+};
+```
 
-- **Description**: Create task
-- **Access**: Admin, SuperAdmin
-- **Body**:
-  - title: string
-  - description: string
-  - programId: string
-  - deadline: Date
-- **Response**: Created task data
+#### GET /material/single/:id
 
-#### GET /task/:programId
+- **Controller**: LearningMaterialController.getLearningMaterialById
+- **Service**: LearningMaterialService.getAllLearningMaterialById
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin, UserRole.user)
+- **Implementation**:
+  - Role-based data access
+  - Returns single material with nested content
 
-- **Description**: Get tasks by program
-- **Access**: Admin, SuperAdmin, User
-- **Response**: Array of tasks
+### Practical Routes (/practical)
 
-### JWT Routes (/jwt)
+#### POST /practical/create
 
-#### POST /jwt/verify
+- **Controller**: PracticalController.createPractical
+- **Service**: PracticalService.createPracticalIntoDB
+- **Middleware**:
+  - auth(UserRole.admin, UserRole.superAdmin)
+  - validateRequest(CreatePracticalValidation)
+- **Implementation**:
+  - Creates new practical material
+  - Returns created practical data
 
-- **Description**: Verify JWT token
-- **Body**:
-  - token: string
-- **Response**: Token validity status
+#### GET /practical/:programId
 
-#### POST /jwt/refresh
+- **Controller**: PracticalController.getPracticalsByProgram
+- **Service**: PracticalService.getAllPracticals
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin, UserRole.user)
+- **Implementation**:
+  - Role-based data access
+  - Returns practicals with nested content
 
-- **Description**: Refresh JWT token
-- **Body**:
-  - refreshToken: string
-- **Response**: New access token
+### Assignment Routes (/assignment)
 
-## Database Models
+#### POST /assignment/create
 
-The application uses MongoDB with Mongoose ODM. Models are defined in the DB directory.
+- **Controller**: AssignmentController.createAssignment
+- **Service**: AssignmentService.createAssignmentIntoDB
+- **Middleware**:
+  - auth(UserRole.admin, UserRole.superAdmin)
+  - validateRequest(CreateAssignmentValidation)
+- **Implementation**:
+  - Creates new assignment
+  - Returns created assignment data
 
-## Authentication
+#### GET /assignment/:programId
 
-- JWT-based authentication
-- Token-based session management
-- Password hashing using bcrypt
+- **Controller**: AssignmentController.getAssignmentsByProgram
+- **Service**: AssignmentService.getAllAssignments
+- **Middleware**: auth(UserRole.admin, UserRole.superAdmin, UserRole.user)
+- **Implementation**:
+  - Role-based data access
+  - Returns assignments with nested content
 
-## Error Handling
+## Data Models
 
-Custom error handling middleware for consistent error responses across the application.
+### User Model
 
-## Security Features
+- **Fields**: name, email, password, role, status, completedTask, isDeleted
+- **Methods**: isUserExist, isUserExistByEmail, isPasswordMatched
+- **Virtuals**: id
+- **Statics**: findByEmail
 
-- Password hashing
-- JWT token authentication
-- CORS configuration
-- Input validation using Zod
+### Program Model
 
-## Development
+- **Fields**: name, description, learningMaterials, practicals, assignments, isDeleted
+- **Virtuals**: id
+- **Population**: learningMaterials, practicals, assignments
 
-To run the project locally:
+### LearningMaterial Model
 
-1. Install dependencies: `npm install`
-2. Set up environment variables
-3. Run development server: `npm run dev`
+- **Fields**: name, description, courseImage, courseContents, isDeleted
+- **Virtuals**: id
+- **Population**: courseContents.contentDetails
 
-## Production
+### Practical Model
 
-The application is configured for deployment on Vercel (vercel.json present).
+- **Fields**: name, courseImage, courseContents, isDeleted
+- **Virtuals**: id
+- **Population**: courseContents.contentDetails
 
-## Scripts
+### Assignment Model
 
-- `npm start`: Start the production server
-- `npm run dev`: Start the development server with nodemon
-- `npm run lint`: Run ESLint
-- `npm run lint:fix`: Fix ESLint issues automatically
+- **Fields**: name, description, courseImage, isDeleted
+- **Virtuals**: id
+
+## Middleware Implementation
+
+### Authentication Middleware (auth.js)
+
+- **Purpose**: Protects routes based on user roles
+- **Implementation**:
+  - Extracts JWT from Authorization header
+  - Verifies token validity
+  - Checks user role against allowed roles
+  - Injects user object into request
+  - Blocks unauthorized access
+
+```javascript
+// Simplified auth middleware
+const auth = (...requiredRoles) => {
+  return async (req, res, next) => {
+    try {
+      // Extract and verify token
+      const token = req.headers.authorization;
+      if (!token) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "Unauthorized access");
+      }
+
+      // Decode token and get user
+      const decoded = jwtHelpers.verifyToken(token);
+      const { email } = decoded;
+
+      // Find user and check role
+      const user = await User.isUserExistByEmail(email);
+      if (!user) {
+        throw new AppError(httpStatus.NOT_FOUND, "User not found");
+      }
+
+      const { role } = user;
+      if (requiredRoles.length && !requiredRoles.includes(role)) {
+        throw new AppError(httpStatus.FORBIDDEN, "Forbidden access");
+      }
+
+      // Inject user into request
+      req.user = user;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+};
+```
+
+### Validation Middleware (validateRequest.js)
+
+- **Purpose**: Validates request data against Zod schemas
+- **Implementation**:
+  - Receives Zod schema as parameter
+  - Validates request body against schema
+  - Passes validation errors to error handler
+
+```javascript
+// Simplified validate middleware
+const validateRequest = (schema) => {
+  return async (req, res, next) => {
+    try {
+      await schema.parseAsync(req.body);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+};
+```
 
 ## Frontend Overview
 
@@ -405,878 +492,1065 @@ The frontend is a React-based application built with Vite, using modern React pr
 - SweetAlert2 for notifications
 - React Toastify for toast notifications
 
-### Project Structure
+### Key Components Structure
 
-```
-frontend/
-├── src/
-│   ├── assets/        # Static assets
-│   ├── components/    # Reusable React components
-│   ├── hooks/         # Custom React hooks
-│   ├── redux/         # Redux store and slices
-│   ├── routes/        # Route definitions
-│   ├── styles/        # CSS and styling files
-│   ├── utils/         # Utility functions
-│   ├── App.jsx        # Root component
-│   └── main.jsx       # Application entry point
-├── public/            # Public assets
-└── index.html         # HTML template
-```
+#### Authentication Components
 
-### Key Features
+- `Login.jsx` - User login form
+- `GeneratePassword.jsx` - Initial password creation
+- `ForgotPassword.jsx` - Password recovery request
+- `ResetPassword.jsx` - Password reset form
+- `ProtectedRoute.jsx` - Route protection wrapper
 
-1. **State Management**
+#### Layout Components
 
-   - Redux Toolkit for global state
-   - Redux Persist for state persistence
-   - Local storage integration
+- `Layout.jsx` - Main application layout
+- `Sidebar.jsx` - Navigation sidebar
+- `Header.jsx` - Application header
+- `Footer.jsx` - Application footer
 
-2. **Authentication**
+#### User Dashboard Components
 
-   - JWT-based authentication
-   - Protected routes
-   - Token management
+- `UserDashboard.jsx` - User's main dashboard
+- `UserProfile.jsx` - User profile management
+- `CourseListing.jsx` - List of available courses
+- `CourseDetails.jsx` - Course detail view
+- `CourseContent.jsx` - Course content display
+- `TaskManager.jsx` - User task tracking
 
-3. **UI Components**
+#### Admin Components
 
-   - Bootstrap-based components
-   - Custom styled components
-   - Responsive design
-   - Toast notifications
-   - Modal dialogs
+- `AdminDashboard.jsx` - Admin main dashboard
+- `UserManagement.jsx` - User management interface
+- `ProgramManagement.jsx` - Program management interface
+- `ContentCreation.jsx` - Content creation tools
+- `AssignmentManagement.jsx` - Assignment management
 
-4. **Form Handling**
+### Frontend Route Structure with Backend Integration
 
-   - React Hook Form integration
-   - Form validation with Zod
-   - Custom form components
+#### Authentication Routes
 
-5. **API Integration**
-   - Axios for HTTP requests
-   - API interceptors
-   - Error handling
+##### `/` - Login Page
 
-### Development
+- **Component**: `Login.jsx`
+- **Redux Actions**: `login`, `clearAuthError`
+- **API Integration**: `POST /auth/login`
+- **State Management**: Stores JWT tokens and user info in Redux and localStorage
+- **Protected**: No
 
-To run the frontend project locally:
+##### `/generatePassword` - Password Generation
 
-1. Install dependencies: `npm install`
-2. Start development server: `npm run dev`
-3. Build for production: `npm run build`
-4. Preview production build: `npm run preview`
+- **Component**: `GeneratePassword.jsx`
+- **Redux Actions**: `createPassword`
+- **API Integration**: `POST /auth/create-password`
+- **Query Params**: `token` - JWT token from email
+- **Protected**: No
 
-### Deployment
+##### `/forgotPassword` - Password Recovery
 
-The frontend is configured for deployment with Nginx (nginx.conf present).
+- **Component**: `ForgotPassword.jsx`
+- **Redux Actions**: `forgotPassword`
+- **API Integration**: `POST /auth/forget-password`
+- **Protected**: No
 
-## Full Stack Integration
+##### `/resetPassword` - Password Reset
 
-The frontend and backend are designed to work together seamlessly:
+- **Component**: `ResetPassword.jsx`
+- **Redux Actions**: `resetPassword`
+- **API Integration**: `POST /auth/reset-password`
+- **Query Params**: `token` - Reset token from email
+- **Protected**: No
 
-- Backend provides RESTful APIs
-- Frontend consumes these APIs using Axios
-- JWT authentication is shared between both
-- Consistent error handling across stack
-- Shared validation schemas using Zod
+#### User Routes
 
-## Development Workflow
+##### `/home` - User Dashboard
 
-1. Backend development:
+- **Component**: `UserDashboard.jsx`
+- **Redux Actions**: `fetchPrograms`
+- **API Integration**: `GET /program`
+- **State Management**: Stores programs in Redux
+- **Protected**: Yes (UserRole.user)
 
-   - API endpoints in Express
-   - Database operations with Mongoose
-   - Authentication middleware
+##### `/home/profile` - User Profile
 
-2. Frontend development:
-   - React components and hooks
-   - Redux state management
-   - API integration
-   - UI/UX implementation
+- **Component**: `UserProfile.jsx`
+- **Redux Actions**: `fetchUserProfile`, `updateUserProfile`
+- **API Integration**: `GET /users`, `PATCH /users`
+- **Protected**: Yes (UserRole.user)
 
-## Security Considerations
+##### `/home/courses/regular` - Course Listing
 
-- JWT token management
-- CORS configuration
-- Input validation
-- Secure password handling
-- Protected routes
-- API security
+- **Component**: `CourseListing.jsx`
+- **Redux Actions**: `fetchPrograms`
+- **API Integration**: `GET /program`
+- **Implementation**: Displays list of available programs
+- **Protected**: Yes (UserRole.user)
 
-## Detailed API Endpoints
+##### `/home/courses/regular/:id` - Course Details
 
-### Authentication Routes (/auth)
+- **Component**: `CourseDetails.jsx`
+- **Redux Actions**: `fetchLearningMaterials`
+- **API Integration**: `GET /material/:programId`
+- **URL Params**: `id` - Program ID
+- **Implementation**: Displays learning materials for a program
+- **Protected**: Yes (UserRole.user)
 
-#### POST /auth/login
+##### `/home/courses/course/:id` - Course Content
 
-- **Description**: User login endpoint
-- **Request Body**:
+- **Component**: `CourseContent.jsx`
+- **Redux Actions**: `fetchLearningMaterial`, `markTaskComplete`
+- **API Integration**:
+  - `GET /material/single/:id`
+  - `PATCH /users/task-update`
+- **URL Params**: `id` - Learning Material ID
+- **Implementation**: Displays detailed learning material content
+- **Protected**: Yes (UserRole.user)
 
-```json
-{
-  "email": "user@example.com", // Required, valid email format
-  "password": "userpassword" // Required, string
-}
-```
+#### Admin Routes
 
-- **Response**:
+##### `/admin` - Admin Dashboard
 
-```json
-{
-  "success": true,
-  "message": "User logged in successfully",
-  "data": {
-    "accessToken": "jwt_token",
-    "refreshToken": "refresh_token",
-    "user": {
-      "id": "user_id",
-      "name": "User Name",
-      "email": "user@example.com",
-      "role": "user"
+- **Component**: `AdminDashboard.jsx`
+- **Redux Actions**: `fetchAdminStats`
+- **API Integration**: Multiple admin endpoints
+- **Protected**: Yes (UserRole.admin, UserRole.superAdmin)
+
+##### `/admin/create-user` - User Creation
+
+- **Component**: `CreateUser.jsx`
+- **Redux Actions**: `createUser`
+- **API Integration**: `POST /users/create-user`
+- **Protected**: Yes (UserRole.admin, UserRole.superAdmin)
+
+##### `/admin/user-info` - User Information
+
+- **Component**: `UserInfo.jsx`
+- **Redux Actions**: `fetchUsers`, `deleteUser`, `changeUserStatus`
+- **API Integration**:
+  - `GET /users/:email`
+  - `DELETE /users/:email`
+  - `PATCH /users/change-status`
+- **Protected**: Yes (UserRole.admin, UserRole.superAdmin)
+
+##### `/admin/profile` - Admin Profile
+
+- **Component**: `AdminProfile.jsx`
+- **Redux Actions**: `fetchUserProfile`, `updateAdminProfile`
+- **API Integration**: `GET /users`, `PATCH /users`
+- **Protected**: Yes (UserRole.admin, UserRole.superAdmin)
+
+### Redux State Management
+
+#### Auth Slice
+
+- **State**: `{user, token, isAuthenticated, loading, error}`
+- **Actions**: `login`, `logout`, `refreshToken`, `forgotPassword`, `resetPassword`
+- **Selectors**: `selectUser`, `selectIsAuthenticated`, `selectAuthError`
+
+#### User Slice
+
+- **State**: `{users, currentUser, loading, error}`
+- **Actions**: `fetchUsers`, `fetchUserProfile`, `createUser`, `updateUser`, `deleteUser`
+- **Selectors**: `selectUsers`, `selectCurrentUser`, `selectUserLoading`
+
+#### Program Slice
+
+- **State**: `{programs, currentProgram, materials, loading, error}`
+- **Actions**: `fetchPrograms`, `fetchProgram`, `fetchLearningMaterials`
+- **Selectors**: `selectPrograms`, `selectCurrentProgram`, `selectLearningMaterials`
+
+#### Task Slice
+
+- **State**: `{tasks, completedTasks, loading, error}`
+- **Actions**: `fetchTasks`, `markTaskComplete`, `fetchCompletedTasks`
+- **Selectors**: `selectTasks`, `selectCompletedTasks`, `selectTaskLoading`
+
+### API Integration Layer
+
+The frontend uses Axios for API communication:
+
+```javascript
+// API client setup
+import axios from "axios";
+
+const baseURL = import.meta.env.VITE_API_BASE_URL;
+
+const apiClient = axios.create({
+  baseURL,
+  timeout: 10000,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// Request interceptor for adding auth token
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `${token}`;
     }
-  }
-}
-```
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-#### POST /auth/change-password
-
-- **Description**: Change user password
-- **Access**: Admin, User
-- **Request Body**:
-
-```json
-{
-  "oldPassword": "currentpassword", // Required, string
-  "newPassword": "newpassword" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Password changed successfully",
-  "data": null
-}
-```
-
-#### POST /auth/refresh-token
-
-- **Description**: Refresh JWT token
-- **Request Cookies**:
-
-```json
-{
-  "refreshToken": "refresh_token" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Token refreshed successfully",
-  "data": {
-    "accessToken": "new_jwt_token"
-  }
-}
-```
-
-#### POST /auth/forget-password
-
-- **Description**: Initiate password reset
-- **Request Body**:
-
-```json
-{
-  "email": "user@example.com" // Required, valid email format
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Password reset email sent",
-  "data": null
-}
-```
-
-#### POST /auth/create-password
-
-- **Description**: Create new password
-- **Body**:
-  - token: string
-  - password: string
-- **Response**: Success message
-
-#### POST /auth/reset-password
-
-- **Description**: Reset password with token
-- **Body**:
-  - token: string
-  - newPassword: string
-- **Response**: Success message
-
-### User Routes (/users)
-
-#### POST /users/create-user
-
-- **Description**: Create new user
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
-
-```json
-{
-  "name": "User Name", // Required, string
-  "email": "user@example.com", // Required, valid email format
-  "role": "user" // Required, enum: ["admin", "user"]
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "User created successfully",
-  "data": {
-    "id": "user_id",
-    "name": "User Name",
-    "email": "user@example.com",
-    "role": "user",
-    "status": "active"
-  }
-}
-```
-
-#### GET /users
-
-- **Description**: Get current user profile
-- **Access**: Admin, SuperAdmin, User
-- **Response**: User profile data
-
-#### GET /users/:email
-
-- **Description**: Get user by email
-- **Access**: Admin, SuperAdmin
-- **Response**: User data
-
-#### PATCH /users/change-status
-
-- **Description**: Change user status
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
-
-```json
-{
-  "status": "in-progress" // Required, enum: ["in-progress", "blocked"]
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "User status updated successfully",
-  "data": {
-    "id": "user_id",
-    "status": "in-progress"
-  }
-}
-```
-
-#### DELETE /users/:email
-
-- **Description**: Delete user
-- **Access**: Admin, SuperAdmin
-- **Response**: Success message
-
-#### PATCH /users/task-update
-
-- **Description**: Update user's completed tasks
-- **Access**: User
-- **Request Body**:
-
-```json
-{
-  "completedTask": "task_id" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Task updated successfully",
-  "data": {
-    "id": "user_id",
-    "completedTasks": ["task_id"]
-  }
-}
-```
-
-### Program Routes (/program)
-
-#### POST /program/create-program
-
-- **Description**: Create new program
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
-
-```json
-{
-  "title": "Program Title", // Required, string
-  "description": "Program Description", // Required, string
-  "duration": 30, // Required, number
-  "modules": [
-    // Required, array
-    {
-      "title": "Module Title",
-      "content": "Module Content"
+// Response interceptor for error handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    // Handle token expiration
+    if (error.response && error.response.status === 401) {
+      // Try to refresh token or logout
     }
-  ]
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Program created successfully",
-  "data": {
-    "id": "program_id",
-    "title": "Program Title",
-    "description": "Program Description",
-    "duration": 30,
-    "modules": [...]
+    return Promise.reject(error);
   }
-}
+);
+
+export default apiClient;
 ```
 
-#### POST /program
+### Authentication and Route Protection
 
-- **Description**: Get all programs
-- **Access**: Admin, SuperAdmin, User
-- **Response**: Array of programs
+The application uses a `ProtectedRoute` component to guard routes:
 
-### Learning Material Routes (/material)
+```jsx
+// ProtectedRoute implementation
+const ProtectedRoute = ({ element, allowedRoles }) => {
+  const { isAuthenticated, user } = useSelector(selectAuth);
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
 
-#### POST /material/create
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate("/");
+    } else if (allowedRoles && !allowedRoles.includes(user.role)) {
+      dispatch(logout());
+      navigate("/");
+    }
+  }, [isAuthenticated, user, allowedRoles, navigate, dispatch]);
 
-- **Description**: Create learning material
-- **Access**: Admin, SuperAdmin
-- **Body**:
-  - title: string
-  - content: string
-  - programId: string
-  - type: string
-- **Response**: Created material data
-
-#### GET /material/:programId
-
-- **Description**: Get materials by program
-- **Access**: Admin, SuperAdmin, User
-- **Response**: Array of materials
-
-### Task Material Routes (/task)
-
-#### POST /task/create
-
-- **Description**: Create task
-- **Access**: Admin, SuperAdmin
-- **Body**:
-  - title: string
-  - description: string
-  - programId: string
-  - deadline: Date
-- **Response**: Created task data
-
-#### GET /task/:programId
-
-- **Description**: Get tasks by program
-- **Access**: Admin, SuperAdmin, User
-- **Response**: Array of tasks
-
-### JWT Routes (/jwt)
-
-#### POST /jwt/verify
-
-- **Description**: Verify JWT token
-- **Body**:
-  - token: string
-- **Response**: Token validity status
-
-#### POST /jwt/refresh
-
-- **Description**: Refresh JWT token
-- **Body**:
-  - refreshToken: string
-- **Response**: New access token
-
-## API Response Format
-
-All API responses follow a standard format:
-
-```json
-{
-  "success": boolean,
-  "message": string,
-  "data": object | array | null,
-  "error": {
-    "code": string,
-    "message": string
-  } | null
-}
+  return isAuthenticated ? element : null;
+};
 ```
 
-## Authentication
+## Data Flow Between Frontend and Backend
 
-All protected routes require a valid JWT token in the Authorization header:
+### User Authentication Flow
 
-```
-Authorization: Bearer <token>
-```
+1. User enters credentials in `Login.jsx`
+2. Frontend dispatches `login` action
+3. API request sent to `POST /auth/login`
+4. Backend validates credentials, returns tokens and user data
+5. Frontend stores tokens and user data in Redux and localStorage
+6. Frontend redirects to appropriate dashboard based on user role
+
+### Course Navigation Flow
+
+1. User accesses `/home/courses/regular`
+2. `CourseListing.jsx` component mounts
+3. Component dispatches `fetchPrograms` action
+4. API request sent to `GET /program`
+5. Backend processes request through:
+   - `auth` middleware checks JWT token
+   - `ProgramController.getAllPrograms` handles request
+   - `ProgramService.getAllPrograms` retrieves data with role-based filtering
+   - Response sent to frontend
+6. Frontend receives program data and renders course list
+7. User clicks on a course
+8. Frontend navigates to `/home/courses/regular/:id`
+9. `CourseDetails.jsx` component mounts
+10. Component dispatches `fetchLearningMaterials` action
+11. Backend serves learning materials for the selected program
+12. Frontend renders learning materials
+
+### User Task Completion Flow
+
+1. User completes a task in course content
+2. Frontend dispatches `markTaskComplete` action
+3. API request sent to `PATCH /users/task-update`
+4. Backend updates user's completedTask array
+5. Success response sent to frontend
+6. Frontend updates UI to reflect completed state
 
 ## Error Handling
 
-The API uses standard HTTP status codes:
+### Backend Error Handling
 
-- 200: Success
-- 201: Created
-- 400: Bad Request
-- 401: Unauthorized
-- 403: Forbidden
-- 404: Not Found
-- 500: Internal Server Error
+The backend uses a centralized error handler with custom error classes:
 
-## API Request/Response Formats
+```javascript
+// AppError.js - Custom error class
+class AppError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.statusCode = statusCode;
+    this.status = statusCode >= 400 && statusCode < 500 ? "error" : "fail";
 
-### Authentication Routes (/auth)
-
-#### POST /auth/login
-
-- **Description**: User login endpoint
-- **Request Body**:
-
-```json
-{
-  "email": "user@example.com", // Required, valid email format
-  "password": "userpassword" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "User logged in successfully",
-  "data": {
-    "accessToken": "jwt_token",
-    "refreshToken": "refresh_token",
-    "user": {
-      "id": "user_id",
-      "name": "User Name",
-      "email": "user@example.com",
-      "role": "user"
-    }
+    Error.captureStackTrace(this, this.constructor);
   }
 }
-```
 
-#### POST /auth/change-password
+// Global error handler middleware
+const errorHandler = (err, req, res, next) => {
+  let error = { ...err };
+  error.message = err.message;
 
-- **Description**: Change user password
-- **Access**: Admin, User
-- **Request Body**:
-
-```json
-{
-  "oldPassword": "currentpassword", // Required, string
-  "newPassword": "newpassword" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Password changed successfully",
-  "data": null
-}
-```
-
-#### POST /auth/refresh-token
-
-- **Description**: Refresh JWT token
-- **Request Cookies**:
-
-```json
-{
-  "refreshToken": "refresh_token" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Token refreshed successfully",
-  "data": {
-    "accessToken": "new_jwt_token"
+  // Log error in development
+  if (process.env.NODE_ENV === "development") {
+    console.error(err);
   }
-}
-```
 
-#### POST /auth/forget-password
-
-- **Description**: Initiate password reset
-- **Request Body**:
-
-```json
-{
-  "email": "user@example.com" // Required, valid email format
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Password reset email sent",
-  "data": null
-}
-```
-
-### User Routes (/users)
-
-#### POST /users/create-user
-
-- **Description**: Create new user
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
-
-```json
-{
-  "name": "User Name", // Required, string
-  "email": "user@example.com", // Required, valid email format
-  "role": "user" // Required, enum: ["admin", "user"]
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "User created successfully",
-  "data": {
-    "id": "user_id",
-    "name": "User Name",
-    "email": "user@example.com",
-    "role": "user",
-    "status": "active"
+  // Handle specific error types
+  if (err.name === "CastError") {
+    error = new AppError(400, "Invalid ID format");
   }
-}
+
+  // Send standardized error response
+  res.status(error.statusCode || 500).json({
+    success: false,
+    message: error.message || "Internal server error",
+    error: {
+      code: error.code || "UNKNOWN_ERROR",
+      details: error.details || null,
+    },
+  });
+};
 ```
 
-#### PATCH /users/change-status
+### Frontend Error Handling
 
-- **Description**: Change user status
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
+The frontend handles errors through:
 
-```json
-{
-  "status": "in-progress" // Required, enum: ["in-progress", "blocked"]
-}
+1. Redux action error handling
+2. API interceptors for global error management
+3. Component-level error boundaries
+4. Toast notifications for user feedback
+
+## Security Implementation
+
+### JWT Authentication
+
+```javascript
+// JWT helpers
+import jwt from "jsonwebtoken";
+import config from "../config";
+
+const createToken = (payload, secret, expiry) => {
+  return jwt.sign(payload, secret, {
+    expiresIn: expiry,
+  });
+};
+
+const verifyToken = (token) => {
+  return jwt.verify(token, config.jwt.secret);
+};
+
+// Generate auth tokens
+const generateTokens = (user) => {
+  const accessToken = createToken(
+    { email: user.email, role: user.role },
+    config.jwt.secret,
+    config.jwt.expires_in
+  );
+
+  const refreshToken = createToken(
+    { email: user.email },
+    config.jwt.refresh_secret,
+    config.jwt.refresh_expires_in
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+  };
+};
 ```
 
-- **Response**:
+### Password Security
 
-```json
-{
-  "success": true,
-  "message": "User status updated successfully",
-  "data": {
-    "id": "user_id",
-    "status": "in-progress"
+```javascript
+// Password hashing
+import bcrypt from "bcrypt";
+import config from "../config";
+
+const hashPassword = async (password) => {
+  const salt = await bcrypt.genSalt(Number(config.bcrypt_salt_rounds));
+  return await bcrypt.hash(password, salt);
+};
+
+const comparePassword = async (givenPassword, savedPassword) => {
+  return await bcrypt.compare(givenPassword, savedPassword);
+};
+```
+
+## Development Best Practices
+
+### API Response Format
+
+All API responses follow a standard format:
+
+```javascript
+// Success response
+res.status(200).json({
+  success: true,
+  message: "Operation successful",
+  data: result,
+});
+
+// Error response
+res.status(400).json({
+  success: false,
+  message: "Operation failed",
+  error: {
+    code: "VALIDATION_ERROR",
+    details: errors,
+  },
+});
+```
+
+### Validation with Zod
+
+```javascript
+// Validation schema example
+import { z } from "zod";
+
+const loginValidationSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+// Controller with validation
+const login = async (req, res, next) => {
+  try {
+    // Validation happens in middleware
+    const { email, password } = req.body;
+    const result = await AuthService.loginUser(email, password);
+
+    res.status(200).json({
+      success: true,
+      message: "User logged in successfully",
+      data: result,
+    });
+  } catch (error) {
+    next(error);
   }
-}
+};
 ```
 
-#### PATCH /users/task-update
+### Modular Architecture
 
-- **Description**: Update user's completed tasks
-- **Access**: User
-- **Request Body**:
+Both frontend and backend use modular architectures:
+
+- Backend: Feature-based modules with MVC pattern
+- Frontend: Component-based architecture with Redux
+
+This ensures:
+
+- Separation of concerns
+- Reusability
+- Maintainability
+- Testability
+
+## Deployment Considerations
+
+### Backend Deployment
+
+The backend is configured for deployment on Vercel (vercel.json present):
 
 ```json
 {
-  "completedTask": "task_id" // Required, string
-}
-```
-
-- **Response**:
-
-```json
-{
-  "success": true,
-  "message": "Task updated successfully",
-  "data": {
-    "id": "user_id",
-    "completedTasks": ["task_id"]
-  }
-}
-```
-
-### Program Routes (/program)
-
-#### POST /program/create-program
-
-- **Description**: Create new program
-- **Access**: Admin, SuperAdmin
-- **Request Body**:
-
-```json
-{
-  "title": "Program Title", // Required, string
-  "description": "Program Description", // Required, string
-  "duration": 30, // Required, number
-  "modules": [
-    // Required, array
+  "version": 2,
+  "builds": [
     {
-      "title": "Module Title",
-      "content": "Module Content"
+      "src": "src/server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "src/server.js",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     }
   ]
 }
 ```
 
-- **Response**:
+### Frontend Deployment
+
+The frontend is configured for deployment with Nginx (nginx.conf present):
+
+```
+server {
+    listen 80;
+    server_name example.com;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api {
+        proxy_pass http://backend-service:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+  }
+}
+```
+
+## API Data JSON Format
+
+### Standard Response Format
+
+All API endpoints follow a standardized response format:
+
+```javascript
+// Success response
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Operation successful",
+  "data": { /* Response data */ }
+}
+
+// Error response
+{
+  "success": false,
+  "statusCode": 400,
+  "message": "Operation failed",
+  "error": {
+    "code": "ERROR_CODE",
+    "details": { /* Error details */ }
+  }
+}
+```
+
+### Authentication Endpoints
+
+#### Login Request/Response
+
+**Request:**
+
+```json
+{
+  "email": "user@example.com",
+  "password": "Password123"
+}
+```
+
+**Response:**
 
 ```json
 {
   "success": true,
-  "message": "Program created successfully",
+  "statusCode": 200,
+  "message": "User logged in successfully",
   "data": {
-    "id": "program_id",
-    "title": "Program Title",
-    "description": "Program Description",
-    "duration": 30,
-    "modules": [...]
+    "user": {
+      "id": "60d0fe4f5311236168a109ca",
+      "name": "John Doe",
+      "email": "user@example.com",
+      "role": "user",
+      "status": "active",
+      "completedTask": ["task1", "task2"]
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+### User Management Endpoints
+
+#### Create User Request/Response
+
+**Request:**
+
+```json
+{
+  "name": "New User",
+  "email": "newuser@example.com",
+  "role": "user"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "User created successfully",
+  "data": {
+    "id": "60d0fe4f5311236168a109cb",
+    "name": "New User",
+    "email": "newuser@example.com",
+    "role": "user",
+    "status": "pending"
+  }
+}
+```
+
+### Program Endpoints
+
+#### Get All Programs Response
+
+**Response for Admin:**
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Programs retrieved successfully",
+  "data": [
+    {
+      "id": "60d0fe4f5311236168a109cc",
+      "name": "Web Development",
+      "description": "Learn web development fundamentals",
+      "learningMaterials": [
+        {
+          "id": "60d0fe4f5311236168a109cd",
+          "name": "HTML Basics",
+          "description": "Introduction to HTML",
+          "courseImage": "html.jpg",
+          "courseContents": [
+            {
+              "id": "60d0fe4f5311236168a109ce",
+              "title": "HTML Elements",
+              "content": "Learn about HTML elements",
+              "sortOrder": 1
+            }
+          ]
+        }
+      ],
+      "practicals": [
+        {
+          "id": "60d0fe4f5311236168a109cf",
+          "name": "HTML Practice",
+          "courseImage": "html-practice.jpg"
+        }
+      ],
+      "assignments": [
+        {
+          "id": "60d0fe4f5311236168a109cg",
+          "name": "HTML Assignment",
+          "description": "Create a basic HTML page"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Response for User:**
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Programs retrieved successfully",
+  "data": [
+    {
+      "id": "60d0fe4f5311236168a109cc",
+      "name": "Web Development",
+      "description": "Learn web development fundamentals",
+      "progress": 35,
+      "materials": [
+        {
+          "id": "60d0fe4f5311236168a109cd",
+          "name": "HTML Basics",
+          "description": "Introduction to HTML",
+          "completed": true,
+          "image": "html.jpg"
+        },
+        {
+          "id": "60d0fe4f5311236168a109ce",
+          "name": "CSS Basics",
+          "description": "Introduction to CSS",
+          "completed": false,
+          "image": "css.jpg"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Learning Material Endpoints
+
+#### Get Material By ID Response
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Learning material retrieved successfully",
+  "data": {
+    "id": "60d0fe4f5311236168a109cd",
+    "name": "HTML Basics",
+    "description": "Introduction to HTML",
+    "courseImage": "html.jpg",
+    "courseContents": [
+      {
+        "id": "60d0fe4f5311236168a109ce",
+        "title": "HTML Elements",
+        "contentDetails": {
+          "type": "text",
+          "content": "HTML elements are the building blocks of HTML pages."
+        },
+        "sortOrder": 1,
+        "isCompleted": true
+      },
+      {
+        "id": "60d0fe4f5311236168a109cf",
+        "title": "HTML Attributes",
+        "contentDetails": {
+          "type": "video",
+          "content": "https://example.com/video.mp4"
+        },
+        "sortOrder": 2,
+        "isCompleted": false
+      }
+    ]
+  }
+}
+```
+
+### Task Update Endpoint
+
+#### Update Task Request/Response
+
+**Request:**
+
+```json
+{
+  "taskId": "60d0fe4f5311236168a109ce"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Task updated successfully",
+  "data": {
+    "completedTask": ["60d0fe4f5311236168a109ce", "60d0fe4f5311236168a109cd"]
   }
 }
 ```
 
 ## Validation Rules
 
-### Common Validation Rules
+The API enforces various validation rules using Zod schemas:
 
-- Email: Must be a valid email format
-- Password: String, max 20 characters
-- IDs: Must be valid MongoDB ObjectId format
-- Status: Must be one of the predefined enum values
+### User Validation
 
-### Role-Based Access
+```javascript
+const createUserValidationSchema = z.object({
+  name: z.string().min(3, "Name must be at least 3 characters"),
+  email: z.string().email("Invalid email format"),
+  role: z.enum([UserRole.admin, UserRole.user], "Invalid role"),
+});
+```
 
-- SuperAdmin: Full access to all endpoints
-- Admin: Access to user management and content creation
-- User: Access to learning materials and tasks
+### Program Validation
 
-## Error Response Format
+```javascript
+const createProgramValidationSchema = z.object({
+  name: z.string().min(3, "Name must be at least 3 characters"),
+  description: z.string().optional(),
+  learningMaterials: z.array(z.string()).optional(),
+  practicals: z.array(z.string()).optional(),
+  assignments: z.array(z.string()).optional(),
+});
+```
 
-```json
+### Learning Material Validation
+
+```javascript
+const createLearningMaterialValidationSchema = z.object({
+  name: z.string().min(3, "Name must be at least 3 characters"),
+  description: z.string().optional(),
+  courseImage: z.string().optional(),
+  courseContents: z.array(
+    z.object({
+      title: z.string(),
+      contentDetails: z.object({
+        type: z.enum(["text", "video", "image", "pdf"]),
+        content: z.string(),
+      }),
+      sortOrder: z.number(),
+    })
+  ),
+});
+```
+
+## Frontend Component Analysis
+
+### Component Data Requirements
+
+#### CourseUI Component
+
+The CourseUI component displays a list of programs and requires the following data:
+
+```javascript
+// Expected data structure for CourseUI
 {
-  "success": false,
-  "message": "Error message",
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Detailed error message"
-  }
+  programs: [
+    {
+      id: string,
+      name: string,
+      description: string,
+      progress: number, // Percentage of completion
+      materials: [
+        {
+          id: string,
+          name: string,
+          description: string,
+          completed: boolean,
+          image: string,
+        },
+      ],
+    },
+  ];
 }
 ```
 
-## Common Error Codes
+Implementation details:
 
-- INVALID_INPUT: Validation error
-- UNAUTHORIZED: Authentication required
-- FORBIDDEN: Insufficient permissions
-- NOT_FOUND: Resource not found
-- INTERNAL_ERROR: Server error
+- Receives programs from Redux store
+- Maps progress based on user's completedTask vs. total tasks
+- Renders CourseTile components for each program
+- Uses React Bootstrap Card components for UI
 
-## Frontend Routes
+#### CourseTile Component
 
-### Authentication Routes
+The CourseTile component displays a single program card and requires:
 
-- `/` - Login page
-- `/generatePassword` - Generate new password
-- `/forgotPassword` - Forgot password form
-- `/resetPassword` - Reset password form
+```javascript
+// Expected props for CourseTile
+{
+  id: string,
+  name: string,
+  description: string,
+  progress: number,
+  image: string,
+  onClick: function
+}
+```
 
-### User Routes (/home)
+Key implementation details:
 
-- `/home` - User dashboard with program cards
-- `/home/profile` - User profile view
-- `/home/certificate` - User certificates
-- `/home/courses/regular` - List of regular courses
-- `/home/courses/regular/:id` - Course details
-- `/home/courses/course/:id` - Task manager for specific course
+- Renders a clickable card with program information
+- Displays progress bar for completion status
+- Uses React Router for navigation to course details
+- Implements subtle hover effects for better UX
 
-### Admin Routes (/admin)
+#### CourseDetails Component
 
-- `/admin` - Admin dashboard
-- `/admin/status-change` - Change user status
-- `/admin/password-change` - Change user password
-- `/admin/delete` - Delete user
-- `/admin/profile` - Admin profile
-- `/admin/create-user` - Create new user
-- `/admin/user-info` - View user information
+The CourseDetails component displays detailed information about a program:
 
-### Task Routes
+```javascript
+// Expected data structure for CourseDetails
+{
+  program: {
+    id: string,
+    name: string,
+    description: string
+  },
+  materials: [
+    {
+      id: string,
+      name: string,
+      description: string,
+      courseImage: string,
+      isCompleted: boolean
+    }
+  ],
+  practicals: [
+    {
+      id: string,
+      name: string,
+      courseImage: string,
+      isCompleted: boolean
+    }
+  ],
+  assignments: [
+    {
+      id: string,
+      name: string,
+      description: string,
+      isCompleted: boolean
+    }
+  ]
+}
+```
 
-#### EMI Task
+Key implementation details:
 
-- `/task/emi` - EMI calculator and management
+- Fetches program details using programId from URL params
+- Uses tabs to organize learning materials, practicals, and assignments
+- Renders cards for each type of content
+- Tracks completion status with visual indicators
 
-#### Savings Account Task
+### Data Transformation Layer
 
-- `/task/savings` - Savings account overview
-- `/task/savings/savings-account` - Savings account creation
-  - `/otp` - OTP verification
-  - `/personal-details` - Personal information
-  - `/address-details` - Address information
-  - `/nominee-details` - Nominee information
-  - `/professional-details` - Professional information
-  - `/terms-and-conditions` - Terms acceptance
+The backend and frontend use different data structures, requiring transformation:
 
-#### Demat Account Task
+```javascript
+// Backend service transformation example
+const getAllPrograms = async (role, info, email) => {
+  // ... existing code ...
 
-- `/task/demat-account` - Demat account creation
-  - `/confirm-otp` - OTP verification
-  - `/email` - Email verification
-  - `/confirm-email-otp` - Email OTP verification
-  - `/pan-details` - PAN details
-  - `/segments` - Account segments
-  - `/digilocker` - DigiLocker integration
-  - `/profile` - Profile management
-    - `/link-bank-account` - Bank account linking
-    - `/documents` - Document upload
-    - `/add-nominees` - Nominee details
-    - `/last-step` - Final step
-    - `/otp` - OTP verification
-    - `/success` - Success page
+  // Transformation for user role
+  if (role === UserRole.user) {
+    const user = await User.isUserExistByEmail(email);
+    const completedTasks = user.completedTask;
 
-#### Budgeting Task
+    // Transform backend data to match frontend requirements
+    result = await Program.aggregate([
+      { $match: { isDeleted: false } },
+      {
+        $project: {
+          id: "$_id",
+          name: 1,
+          description: 1,
+          materials: {
+            $map: {
+              input: "$learningMaterials",
+              as: "material",
+              in: {
+                id: "$$material.learningMaterial",
+                name: "$$material.name",
+                description: "$$material.description",
+                completed: {
+                  $in: ["$$material.learningMaterial", completedTasks],
+                },
+                image: "$$material.courseImage",
+              },
+            },
+          },
+          progress: {
+            $multiply: [
+              {
+                $divide: [
+                  {
+                    $size: {
+                      $setIntersection: ["$allTaskIds", completedTasks],
+                    },
+                  },
+                  { $size: "$allTaskIds" },
+                ],
+              },
+              100,
+            ],
+          },
+        },
+      },
+    ]);
+  }
+  // ... existing code ...
+};
+```
 
-- `/task/budgeting` - Budget planning and tracking
+### React Components with Redux Integration
 
-#### Spending Task
+```javascript
+// Example of CourseUI component with Redux integration
+const CourseUI = () => {
+  const dispatch = useDispatch();
+  const { programs, loading } = useSelector(selectPrograms);
+  const { user } = useSelector(selectAuth);
 
-- `/task/spending` - Spending tracker and analysis
+  useEffect(() => {
+    dispatch(fetchPrograms());
+  }, [dispatch]);
 
-#### PAN Task
+  if (loading) return <LoadingSpinner />;
 
-- `/task/pan` - PAN card management
-  - `/epan-route` - E-PAN route selection
-  - `/epan-adhar` - Aadhaar verification
-  - `/epan-otp-acept` - OTP acceptance
-  - `/epan-otp` - OTP verification
-  - `/kyc` - KYC process
-  - `/final` - Final submission
+  return (
+    <Container>
+      <Row>
+        {programs.map((program) => (
+          <Col key={program.id} md={4} className="mb-4">
+            <CourseTile
+              id={program.id}
+              name={program.name}
+              description={program.description}
+              progress={program.progress}
+              image={program.materials[0]?.image || "default.jpg"}
+              onClick={() => navigate(`/home/courses/regular/${program.id}`)}
+            />
+          </Col>
+        ))}
+      </Row>
+    </Container>
+  );
+};
 
-#### Bank Reconciliation Task
+// Example of CourseDetails component
+const CourseDetails = () => {
+  const { id } = useParams();
+  const dispatch = useDispatch();
+  const { currentProgram, materials, practicals, assignments, loading } =
+    useSelector(selectProgramDetails);
 
-- `/task/bank_reconciliation` - Bank reconciliation statement
+  useEffect(() => {
+    if (id) {
+      dispatch(fetchProgramDetails(id));
+    }
+  }, [id, dispatch]);
 
-## Frontend Components Structure
+  // Component rendering logic
+};
+```
 
-### Layout Components
+### Task Completion Flow
 
-- `AuthLayout` - Authentication pages layout
-- `UserLayout` - User dashboard layout
-- `AdminLayout` - Admin dashboard layout
-- `TaskLayout` - Task pages layout
+The frontend implements a task completion system that works as follows:
 
-### Authentication Components
+1. User views learning material in CourseContent component
+2. Component displays a "Mark as Completed" button for each content item
+3. When clicked, dispatches markTaskComplete action
+4. Action sends PATCH request to /users/task-update
+5. Backend updates user's completedTask array
+6. Redux updates local state to reflect completion
+7. UI updates to show completed status
 
-- `LoginForm` - User login form
-- `GeneratePasswordForm` - Password generation form
-- `ForgetPasswordForm` - Password recovery form
-- `ResetPasswordForm` - Password reset form
+```javascript
+// Simplified task completion logic
+const markAsComplete = (taskId) => {
+  dispatch(markTaskComplete({ taskId }))
+    .unwrap()
+    .then(() => {
+      toast.success("Task marked as complete!");
+      // Update local UI immediately
+      setCompletedTasks((prev) => [...prev, taskId]);
+    })
+    .catch((error) => {
+      toast.error("Failed to update task status");
+      console.error(error);
+    });
+};
+```
 
-### User Components
+## Conclusion
 
-- `UserProgramCard` - Program display cards
-- `UserProfileView` - User profile view
-- `UserCertificate` - Certificate display
-- `CourseUI` - Course interface
-- `CourseDetails` - Course details view
-- `TaskManager` - Task management interface
+This documentation provides a comprehensive overview of the SL-IL Platform architecture, including:
 
-### Admin Components
+- Backend routes, controllers, middleware, and validation
+- Frontend routes, components, and state management
+- Data flow between frontend and backend
+- Security implementation details
+- Development best practices
+- Deployment configurations
 
-- `AdminProfile` - Admin profile management
-- `AdminCreateUser` - User creation interface
-- `AdminStatusChange` - User status management
-- `AdminPasswordChange` - Password change interface
-- `AdminDelete` - User deletion interface
-- `AdminUserInfo` - User information view
+Developers should use this as a reference when onboarding to understand the system architecture and implementation details.
 
-### Task Components
+```
 
-- `UserEMIApp` - EMI calculator
-- `DAApp` - Demat account application
-- `PBDTApp` - Personal budget tracker
-- `SpendingApp` - Spending tracker
-- `PANApp` - PAN card management
-- `Bank_Reconciliation` - Bank reconciliation interface
-
-## Frontend Features
-
-### Authentication
-
-- JWT-based authentication
-- Password recovery system
-- Role-based access control
-- Session management
-
-### User Dashboard
-
-- Program overview
-- Course progress tracking
-- Certificate management
-- Profile management
-
-### Admin Dashboard
-
-- User management
-- Program management
-- Status control
-- User creation and deletion
-
-### Task Management
-
-- Step-by-step task completion
-- Document upload
-- OTP verification
-- Progress tracking
-- Form validation
-- Multi-step forms
-
-### Integration Features
-
-- DigiLocker integration
-- Bank account linking
-- PAN verification
-- Aadhaar verification
-- Email verification
+```
